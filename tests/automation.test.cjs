@@ -114,16 +114,16 @@ test('never starts a different course or clicks next task', async () => {
   await fixture('<button id="launch">Начать</button><button id="nextTask">К следующей задаче</button>');
   assert.equal((await plan()).id, undefined);
 });
-test('paused video plays before Continue; active video waits; finished video continues', async () => {
-  await fixture('<video id="video" style="width:300px;height:200px"></video><button id="next">Продолжить</button>');
+test('video waits only while Continue is disabled', async () => {
+  await fixture('<video id="video" style="width:300px;height:200px"></video><button id="next" disabled>Продолжить</button>');
   assert.equal((await plan()).label, 'Воспроизвести видео');
   await page.evaluate(() => Object.defineProperty(document.querySelector('video'), 'paused', {value:false, configurable:true}));
   assert.equal(await page.evaluate(() => testPlan().waiting?.id), 'video');
-  await page.evaluate(() => Object.defineProperty(document.querySelector('video'), 'ended', {value:true, configurable:true}));
+  await page.evaluate(() => document.querySelector('#next').disabled = false);
   assert.equal((await plan()).id, 'next');
 });
 async function seekFixture(duration, end) {
-  await fixture('<video id="video" style="width:300px;height:200px"></video><button id="next">Продолжить</button>');
+  await fixture('<video id="video" style="width:300px;height:200px"></video><button id="next" disabled>Продолжить</button>');
   await page.evaluate(({duration,end}) => {
     const v = document.querySelector('video');
     Object.defineProperties(v, {
@@ -142,6 +142,7 @@ test('seeks a playing video once and waits for natural completion', async () => 
   assert.equal(await page.evaluate(() => document.querySelector('video').currentTime),119);
   assert.equal(await page.evaluate(() => testPlan().waiting?.id),'video');
   await page.evaluate(() => Object.defineProperty(document.querySelector('video'),'ended',{value:true}));
+  await page.evaluate(() => document.querySelector('#next').disabled = false);
   assert.equal((await plan()).id,'next');
 });
 test('does not seek live streams or beyond available seek range', async () => {
@@ -159,5 +160,38 @@ test('rejected seek reports a limitation rather than clicking Continue', async (
     Date.now=()=>original()+6000;
   });
   assert.match((await plan()).blocked,/отклонил перемотку/);
+});
+test('enabled Continue wins over paused video and a possible seek', async () => {
+  await seekFixture(120,120);
+  await page.evaluate(() => {
+    Object.defineProperty(document.querySelector('video'),'paused',{value:true});
+    document.querySelector('#next').disabled=false;
+  });
+  assert.equal((await plan()).id,'next');
+  assert.equal(await page.evaluate(() => document.querySelector('video').currentTime),0);
+});
+test('Continue unlocked after seeking wins before media ends', async () => {
+  await seekFixture(120,120);
+  await page.evaluate(async () => {
+    await testPlayMedia(testPlan());
+    document.querySelector('#next').disabled=false;
+  });
+  assert.equal((await plan()).id,'next');
+  assert.equal(await page.evaluate(() => document.querySelector('video').ended),false);
+});
+test('aria-disabled Continue does not skip video', async () => {
+  await seekFixture(120,120);
+  await page.evaluate(() => {
+    const b=document.querySelector('#next'); b.disabled=false; b.setAttribute('aria-disabled','true');
+  });
+  assert.equal((await plan()).label,'Перемотать видео к концу');
+});
+test('corrects a selected wrong radio answer before combined submit-next', async () => {
+  await fixture('<h1>Контрольный вопрос для проверки?</h1><label><input id="correct" type="radio" name="answer">Первый вариант</label><label><input id="wrong" type="radio" name="answer" checked>Неверный вариант</label><button id="submit">Ответить и перейти далее</button><button disabled>Далее</button>');
+  assert.equal((await plan()).label,'Выбрать правильный вариант');
+  await page.evaluate(() => testPlan().el.click());
+  assert.equal(await page.isChecked('#correct'),true);
+  assert.equal(await page.isChecked('#wrong'),false);
+  assert.equal((await plan()).id,'submit');
 });
 
