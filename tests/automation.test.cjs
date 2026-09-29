@@ -6,7 +6,7 @@ const vm = require('node:vm');
 const {chromium} = require('playwright');
 let browser, page;
 const source = fs.readFileSync(path.join(__dirname, '../automation.js'), 'utf8')
-  .replace("  if (document.readyState === 'loading')", "  globalThis.testPlan = plan; globalThis.testRecordSlider = recordSlider; return;\n  if (document.readyState === 'loading')");
+  .replace("  if (document.readyState === 'loading')", "  globalThis.testPlan = plan; globalThis.testRecordSlider = recordSlider; globalThis.testPlayMedia = playMedia; return;\n  if (document.readyState === 'loading')");
 before(async () => {
   browser = await chromium.launch({channel: process.env.TEST_BROWSER === 'chromium' ? undefined : (process.env.TEST_BROWSER || 'chrome'), headless: true});
   page = await browser.newPage();
@@ -121,5 +121,43 @@ test('paused video plays before Continue; active video waits; finished video con
   assert.equal(await page.evaluate(() => testPlan().waiting?.id), 'video');
   await page.evaluate(() => Object.defineProperty(document.querySelector('video'), 'ended', {value:true, configurable:true}));
   assert.equal((await plan()).id, 'next');
+});
+async function seekFixture(duration, end) {
+  await fixture('<video id="video" style="width:300px;height:200px"></video><button id="next">Продолжить</button>');
+  await page.evaluate(({duration,end}) => {
+    const v = document.querySelector('video');
+    Object.defineProperties(v, {
+      duration: {value:duration, configurable:true},
+      seekable: {value:{length:1,start:()=>0,end:()=>end}, configurable:true},
+      currentTime: {value:0,writable:true,configurable:true},
+      paused: {value:false, configurable:true}
+    });
+    v.play = async () => {};
+  }, {duration,end});
+}
+test('seeks a playing video once and waits for natural completion', async () => {
+  await seekFixture(120,120);
+  assert.equal((await plan()).label,'Перемотать видео к концу');
+  await page.evaluate(() => testPlayMedia(testPlan()));
+  assert.equal(await page.evaluate(() => document.querySelector('video').currentTime),119);
+  assert.equal(await page.evaluate(() => testPlan().waiting?.id),'video');
+  await page.evaluate(() => Object.defineProperty(document.querySelector('video'),'ended',{value:true}));
+  assert.equal((await plan()).id,'next');
+});
+test('does not seek live streams or beyond available seek range', async () => {
+  await seekFixture(Infinity,100);
+  assert.equal(await page.evaluate(() => testPlan().waiting?.id),'video');
+  await seekFixture(120,30);
+  assert.equal(await page.evaluate(() => testPlan().waiting?.id),'video');
+});
+test('rejected seek reports a limitation rather than clicking Continue', async () => {
+  await seekFixture(120,120);
+  await page.evaluate(async () => {
+    await testPlayMedia(testPlan());
+    document.querySelector('video').currentTime=0;
+    const original=Date.now;
+    Date.now=()=>original()+6000;
+  });
+  assert.match((await plan()).blocked,/отклонил перемотку/);
 });
 

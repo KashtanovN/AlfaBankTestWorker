@@ -9,6 +9,34 @@
   let busy = false, ui, status, startButton, lastPage = '', waitingSince = Date.now();
   const visited = new WeakSet();
   const mediaProgress = new WeakMap();
+  const soughtMedia = new WeakMap();
+  function mediaKey(video) {
+    return [video.currentSrc || video.src || video.querySelector('source')?.src || '', video.duration].join('|');
+  }
+  function videoAction(video) {
+    const key = mediaKey(video);
+    const duration = video.duration;
+    const target = Math.max(0, duration - 1);
+    const attempt = soughtMedia.get(video);
+    if (attempt?.key === key && !video.seeking && Date.now() - attempt.at > 5000 && video.currentTime < attempt.target - 1) {
+      return {blocked: 'Плеер отклонил перемотку. Требуется просмотр видео вручную.'};
+    }
+    if (Number.isFinite(duration) && duration > 1 && video.currentTime < target && attempt?.key !== key) {
+      for (let i = 0; i < video.seekable.length; i++) {
+        if (video.seekable.start(i) <= target && video.seekable.end(i) >= target) {
+          return {el: video, label: 'Перемотать видео к концу', media: true, seekTo: target, mediaKey: key, step: `seek-${key}`};
+        }
+      }
+    }
+    return video.paused ? {el: video, label: 'Воспроизвести видео', media: true, step: `play-${key}`} : {waiting: video};
+  }
+  async function playMedia(action) {
+    if (action.seekTo !== undefined) {
+      action.el.currentTime = action.seekTo;
+      soughtMedia.set(action.el, {key: action.mediaKey, target: action.seekTo, at: Date.now()});
+    }
+    await action.el.play();
+  }
   const sliders = new WeakMap();
   function sliderAction() {
     const arrows = [...document.querySelectorAll('button[aria-label="Next slide"]')]
@@ -84,7 +112,7 @@
     const videos = [...document.querySelectorAll('video')].filter(el => visible(el) && !el.ended);
     if (videos.length) {
       const video = videos[0];
-      return video.paused ? {el: video, label: 'Воспроизвести видео', media: true} : {waiting: video};
+      return videoAction(video);
     }
     const slider = sliderAction();
     if (slider) return slider;
@@ -122,8 +150,8 @@
       if (claim.granted && element.isConnected && enabled(element)) {
         element.scrollIntoView({block: 'center', behavior: 'instant'});
         if (action.media) {
-          try { await element.play(); }
-          catch { await send({type: 'stop', reason: 'Браузер не разрешил запуск видео. Нажмите Play вручную и снова запустите расширение.'}); }
+          try { await playMedia(action); }
+          catch { await send({type: 'stop', reason: 'Не удалось перемотать или запустить видео. Используйте плеер вручную и снова запустите расширение.'}); }
         } else { recordSlider(action); element.click(); }
         if (action.visit) visited.add(element);
         waitingSince = Date.now();
@@ -136,7 +164,7 @@
       const host = document.createElement('div');
       host.style.cssText = 'position:fixed;bottom:12px;right:12px;z-index:2147483647';
       ui = host.attachShadow({mode: 'closed'});
-      ui.innerHTML = `<style>:host{all:initial}section{width:300px;background:#fff;color:#222;padding:12px;border:1px solid #ccc;border-radius:12px;box-shadow:0 4px 24px #0003;font:14px/1.4 Arial}button{padding:8px 18px;cursor:pointer}p{font-size:12px}</style><section><b>Только выбранный курс · 1.3.1</b><p>Откройте курс кнопкой «Начать», затем нажмите «Запустить» здесь. Ответы из XML отправляются автоматически.</p><button>Запустить</button><p id="status">Выключено</p></section>`;
+      ui.innerHTML = `<style>:host{all:initial}section{width:300px;background:#fff;color:#222;padding:12px;border:1px solid #ccc;border-radius:12px;box-shadow:0 4px 24px #0003;font:14px/1.4 Arial}button{padding:8px 18px;cursor:pointer}p{font-size:12px}</style><section><b>Только выбранный курс · 1.3.2</b><p>Откройте курс кнопкой «Начать», затем нажмите «Запустить» здесь. Ответы из XML отправляются автоматически.</p><button>Запустить</button><p id="status">Выключено</p></section>`;
       document.documentElement.append(host);
       status = ui.querySelector('#status'); startButton = ui.querySelector('button');
       startButton.addEventListener('click', async () => { const s = await send({type: 'toggle', enabled: startButton.dataset.running !== 'true'}); startButton.dataset.running = String(s.enabled); startButton.textContent = s.enabled ? 'Стоп' : 'Запустить'; status.textContent = s.status; });
