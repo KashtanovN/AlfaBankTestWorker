@@ -31,7 +31,7 @@ async function carousel(count = 3, loop = false) {
     right.onclick = () => {
       index = loop ? (index + 1) % count : index + 1;
       update();
-      if (index === count - 1) {
+      if (loop ? index === 0 : index === count - 1) {
         document.querySelector('#continue').disabled = false;
         if (!loop) right.setAttribute('aria-disabled', 'true');
       }
@@ -66,6 +66,7 @@ test('two carousels on one page have separate progress', async () => {
     document.body.insertBefore(second, document.querySelector('#continue'));
   });
   await slideClick();
+  await page.evaluate(() => document.querySelector('#continue').disabled = true);
   assert.equal((await plan()).id, 'second');
 });
 test('selects the exact radio answer, then submits', async () => {
@@ -88,11 +89,33 @@ test('duplicate answer labels stop automation', async () => {
   await fixture('<h1>Контрольный вопрос для проверки?</h1><label><input type="radio">Первый вариант</label><label><input type="radio">Первый вариант</label>');
   assert.match((await plan()).blocked, /сопоставить/);
 });
-test('expands lesson details before continuing and ignores navigation', async () => {
-  await fixture('<nav><button aria-expanded="false">Меню</button></nav><main><details><summary id="expand">Материал</summary>Текст</details><button id="next">Продолжить</button></main>');
+test('expands lesson details only while Continue is disabled and ignores navigation', async () => {
+  await fixture('<nav><button aria-expanded="false">Меню</button></nav><main><details><summary id="expand">Материал</summary>Текст</details><button id="next" disabled>Продолжить</button></main>');
   assert.equal((await plan()).id, 'expand');
   await page.evaluate(() => testPlan().el.click());
+  await page.evaluate(() => document.querySelector('#next').disabled = false);
   assert.equal((await plan()).id, 'next');
+});
+test('Continue takes priority over unopened lesson blocks and unanswered quiz', async () => {
+  await fixture('<details><summary>Материал</summary>Текст</details><label><input type="radio">Ответ</label><button id="next">Продолжить</button>');
+  assert.equal((await plan()).id,'next');
+});
+test('Continue takes priority over carousel', async () => {
+  await carousel();
+  await page.evaluate(() => document.querySelector('#continue').disabled=false);
+  assert.equal((await plan()).id,'continue');
+});
+test('explicit section skip takes priority over interactive blocks', async () => {
+  await fixture('<details><summary>Материал</summary>Текст</details><button id="skip">Пропустить раздел</button>');
+  assert.equal((await plan()).id,'skip');
+});
+test('ambiguous exits stop instead of clicking an arbitrary button', async () => {
+  await fixture('<button>Продолжить</button><button>Продолжить</button><details><summary>Материал</summary>Текст</details>');
+  assert.match((await plan()).blocked,/несколько кнопок/);
+});
+test('disabled and navigation-only exits are not clicked', async () => {
+  await fixture('<nav><button>Продолжить</button></nav><button aria-disabled="true">Пропустить раздел</button><button>К следующей задаче</button>');
+  assert.equal((await plan()).id,undefined);
 });
 test('disabled Continue is never clicked', async () => {
   await fixture('<button disabled>Продолжить</button>');

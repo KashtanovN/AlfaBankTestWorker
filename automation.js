@@ -83,11 +83,19 @@
     const text = norm(document.body.innerText);
     const buttons = [...document.querySelectorAll('button,a,[role="button"],input[type="button"],input[type="submit"]')].filter(el => visible(el) && enabled(el));
     const named = names => buttons.filter(el => names.includes(label(el)));
+    // Prefer an explicit, enabled exit before interacting with lesson content.
+    const exits = buttons.filter(el => !el.closest('nav,header,aside,[role="navigation"]'));
+    for (const labels of [
+      ['продолжить'],
+      ['пропустить раздел', 'пропустить этот раздел', 'пропустить видео', 'перейти к следующему разделу'],
+      ['далее', 'следующий вопрос']
+    ]) {
+      const matches = exits.filter(el => labels.includes(label(el)));
+      if (matches.length === 1) return {el: matches[0], label: 'Приоритетный переход: ' + label(matches[0])};
+      if (matches.length > 1) return {blocked: 'Найдено несколько кнопок перехода. Выберите нужную вручную.'};
+    }
     const options = [...document.querySelectorAll(controlsSelector)].map(option).filter(o => visible(o.target));
     const active = options.filter(o => enabled(o.el));
-    const next = named(['продолжить', 'далее', 'следующий вопрос']);
-    // Disabled answer controls plus Continue indicate the feedback screen.
-    if (options.length && !active.length && next.length === 1) return {el: next[0], label: 'Продолжить после ответа'};
     if (active.length) {
       const items = (globalThis.alfaHelper?.getItems() || []).filter(i => i.question.length > 8 && text.includes(norm(i.question)));
       if (items.length !== 1 || !items[0].answers.length) return {blocked: 'Нет однозначного ответа в XML. Нужен ручной выбор.'};
@@ -111,16 +119,11 @@
     if (tabs.length) return {el: tabs[0], label: 'Открыть вкладку учебного блока', visit: true};
     const videos = [...document.querySelectorAll('video')].filter(el => visible(el) && !el.ended);
     if (videos.length) {
-      // The course can unlock navigation before the media's ended event.
-      if (next.length === 1) return {el: next[0], label: 'Продолжить: переход уже доступен'};
-      if (next.length > 1) return {blocked: 'На странице несколько кнопок перехода.'};
       const video = videos[0];
       return videoAction(video);
     }
     const slider = sliderAction();
     if (slider) return slider;
-    if (next.length === 1) return {el: next[0], label: 'Перейти дальше'};
-    if (next.length > 1) return {blocked: 'На странице несколько кнопок перехода.'};
     const launch = named(['начать тест']);
     if (launch.length === 1) return {el: launch[0], label: 'Открыть тест внутри выбранного курса'};
     return {blocked: 'Нет доступного шага. Возможно, курс завершён или нужен ручной ввод.'};
@@ -167,7 +170,7 @@
       const host = document.createElement('div');
       host.style.cssText = 'position:fixed;bottom:12px;right:12px;z-index:2147483647';
       ui = host.attachShadow({mode: 'closed'});
-      ui.innerHTML = `<style>:host{all:initial}section{width:300px;background:#fff;color:#222;padding:12px;border:1px solid #ccc;border-radius:12px;box-shadow:0 4px 24px #0003;font:14px/1.4 Arial}button{padding:8px 18px;cursor:pointer}p{font-size:12px}</style><section><b>Только выбранный курс · 1.3.3</b><p>Откройте курс кнопкой «Начать», затем нажмите «Запустить» здесь. Ответы из XML отправляются автоматически.</p><button>Запустить</button><p id="status">Выключено</p></section>`;
+      ui.innerHTML = `<style>:host{all:initial}section{width:300px;background:#fff;color:#222;padding:12px;border:1px solid #ccc;border-radius:12px;box-shadow:0 4px 24px #0003;font:14px/1.4 Arial}button{padding:8px 18px;cursor:pointer}p{font-size:12px}</style><section><b>Только выбранный курс · 1.3.4</b><p>Откройте курс кнопкой «Начать», затем нажмите «Запустить» здесь. Ответы из XML отправляются автоматически.</p><button>Запустить</button><p id="status">Выключено</p></section>`;
       document.documentElement.append(host);
       status = ui.querySelector('#status'); startButton = ui.querySelector('button');
       startButton.addEventListener('click', async () => { const s = await send({type: 'toggle', enabled: startButton.dataset.running !== 'true'}); startButton.dataset.running = String(s.enabled); startButton.textContent = s.enabled ? 'Стоп' : 'Запустить'; status.textContent = s.status; });
