@@ -134,9 +134,10 @@
       const items = (globalThis.alfaHelper?.getItems() || []).filter(i => i.question.length > 8 && text.includes(norm(i.question)));
       if (items.length !== 1 || !items[0].answers.length) return {blocked: 'Нет однозначного ответа в XML. Нужен ручной выбор.'};
       const wanted = items[0].answers.map(norm);
-      if (wanted.some(a => active.filter(o => o.text === a).length !== 1)) {
-        return customAnswerAction(items, text) || {blocked: 'Не удалось сопоставить ответы с переключателями страницы.'};
-      }
+      const mappedCounts = wanted.map(a => active.filter(o => o.text === a).length);
+      if (mappedCounts.some(count => count > 1)) return {blocked: 'Неоднозначная разметка вариантов ответа.'};
+      if (mappedCounts.every(count => count === 0)) return customAnswerAction(items, text) || {blocked: 'Не удалось сопоставить ответы с переключателями страницы.'};
+      if (mappedCounts.some(count => count !== 1)) return {blocked: 'Не удалось однозначно сопоставить все варианты ответа.'};
       if (active.some(o => !o.text) || new Set(active.map(o => o.text)).size !== active.length) return {blocked: 'Неоднозначная разметка вариантов ответа.'};
       if (wanted.length > 1 && active.some(o => o.el.matches('input[type="radio"],[role="radio"]'))) return {blocked: 'Тип вопроса не совпадает с ответами XML.'};
       const wrong = active.find(o => checked(o.el) && !wanted.includes(o.text) && o.el.matches('input[type="checkbox"],[role="checkbox"]'));
