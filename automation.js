@@ -211,7 +211,7 @@
       const host = document.createElement('div');
       host.style.cssText = 'position:fixed;bottom:12px;right:12px;z-index:2147483647';
       ui = host.attachShadow({mode: 'closed'});
-      ui.innerHTML = `<style>:host{all:initial}section{width:300px;background:#fff;color:#222;padding:12px;border:1px solid #ccc;border-radius:12px;box-shadow:0 4px 24px #0003;font:14px/1.4 Arial}button{padding:8px 18px;cursor:pointer}p{font-size:12px}</style><section><b>Только выбранный курс · 1.3.5</b><p>Откройте курс кнопкой «Начать», затем нажмите «Запустить» здесь. Ответы из XML отправляются автоматически.</p><button>Запустить</button><p id="status">Выключено</p></section>`;
+      ui.innerHTML = `<style>:host{all:initial}section{width:300px;background:#fff;color:#222;padding:12px;border:1px solid #ccc;border-radius:12px;box-shadow:0 4px 24px #0003;font:14px/1.4 Arial}button{padding:8px 18px;cursor:pointer}p{font-size:12px}</style><section><b>Только выбранный курс · 1.3.6</b><p>Нажмите «Начать» у нужного курса. Когда откроется плеер, автопрохождение запустится само.</p><button>Запустить</button><p id="status">Выключено</p></section>`;
       document.documentElement.append(host);
       status = ui.querySelector('#status'); startButton = ui.querySelector('button');
       startButton.addEventListener('click', async () => { const s = await send({type: 'toggle', enabled: startButton.dataset.running !== 'true'}); startButton.dataset.running = String(s.enabled); startButton.textContent = s.enabled ? 'Стоп' : 'Запустить'; status.textContent = s.status; });

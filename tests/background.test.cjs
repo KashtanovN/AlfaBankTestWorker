@@ -25,10 +25,24 @@ test('background serializes frames and stops repeats', async () => {
   await request({type:'toggle',enabled:true});
   topUrl = courseUrl('two');
   assert.equal((await request({type:'claim',key:'other'},1)).granted, false);
-  assert.equal((await request({type:'state'})).enabled, false);
+  assert.equal((await request({type:'state'})).enabled, true);
   topUrl = 'https://alfapeople.alfabank.ru/lxp-my-education/task/example';
   assert.equal((await request({type:'toggle',enabled:true})).enabled, false);
   memory['tab-7'] = {enabled:true,autoStart:true};
   assert.equal((await request({type:'state'})).enabled, false);
+});
+
+test('entering a new selected player auto-starts once and Stop persists', async () => {
+  let listener, now=10000;
+  const memory={};
+  const area={get:async key=>({[key]:memory[key]}),set:async data=>Object.assign(memory,data),remove:async key=>delete memory[key]};
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../background.js'),'utf8'),{
+    chrome:{runtime:{onMessage:{addListener:fn=>listener=fn}},storage:{session:area,local:area},tabs:{onRemoved:{addListener:()=>{}}}},Date:{now:()=>now},Promise,URL
+  });
+  const url='https://alfapeople.alfabank.ru/lxp-my-education/wshcm-player/'+encodeURIComponent('/my-education/api/course/launch?course_id=new&object_id=chosen');
+  const request=message=>new Promise(resolve=>listener(message,{tab:{id:9,url},frameId:0,url},resolve));
+  assert.equal((await request({type:'state'})).enabled,true);
+  await request({type:'toggle',enabled:false});
+  assert.equal((await request({type:'state'})).enabled,false);
 });
 

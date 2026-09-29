@@ -20,6 +20,14 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       state.enabled = false;
       state.status = 'Остановлено: вы вышли из выбранного курса.';
     }
+    // Opening a specific player URL means the user has chosen that course.
+    // Start it once; a manual Stop remains in effect while this course stays open.
+    if (message.type === 'state' && current && current !== state.course) {
+      state.enabled = true;
+      state.course = current;
+      state.status = 'Выбранный курс открыт. Начинаю автоматически.';
+      state.last = 0; state.activity = Date.now(); state.seen = [];
+    }
     if (message.type === 'toggle' && sender.frameId === 0) {
       state.enabled = message.enabled === true && !!current;
       state.course = current;
