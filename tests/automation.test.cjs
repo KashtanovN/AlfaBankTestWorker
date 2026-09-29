@@ -57,6 +57,22 @@ test('feedback with disabled options can continue', async () => {
 });
 test('multiple launch buttons require a manual choice', async () => {
   await fixture('<button>Начать</button><button>Начать</button><button>К следующей задаче</button>');
-  assert.match((await plan()).blocked, /несколько кнопок запуска/);
+  assert.equal((await plan()).id, undefined);
+});
+test('Continue with a trailing arrow is recognized', async () => {
+  await fixture('<button id="next">Продолжить →</button>');
+  assert.equal((await plan()).id, 'next');
+});
+test('never starts a different course or clicks next task', async () => {
+  await fixture('<button id="launch">Начать</button><button id="nextTask">К следующей задаче</button>');
+  assert.equal((await plan()).id, undefined);
+});
+test('paused video plays before Continue; active video waits; finished video continues', async () => {
+  await fixture('<video id="video" style="width:300px;height:200px"></video><button id="next">Продолжить</button>');
+  assert.equal((await plan()).label, 'Воспроизвести видео');
+  await page.evaluate(() => Object.defineProperty(document.querySelector('video'), 'paused', {value:false, configurable:true}));
+  assert.equal(await page.evaluate(() => testPlan().waiting?.id), 'video');
+  await page.evaluate(() => Object.defineProperty(document.querySelector('video'), 'ended', {value:true, configurable:true}));
+  assert.equal((await plan()).id, 'next');
 });
 
