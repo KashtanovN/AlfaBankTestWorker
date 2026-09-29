@@ -87,7 +87,7 @@ test('unknown question does not submit or guess', async () => {
 });
 test('duplicate answer labels stop automation', async () => {
   await fixture('<h1>Контрольный вопрос для проверки?</h1><label><input type="radio">Первый вариант</label><label><input type="radio">Первый вариант</label>');
-  assert.match((await plan()).blocked, /сопоставить/);
+  assert.match((await plan()).blocked, /Неоднозначная разметка вариантов ответа/);
 });
 test('expands lesson details only while Continue is disabled and ignores navigation', async () => {
   await fixture('<nav><button aria-expanded="false">Меню</button></nav><main><details><summary id="expand">Материал</summary>Текст</details><button id="next" disabled>Продолжить</button></main>');
