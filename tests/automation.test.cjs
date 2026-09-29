@@ -6,7 +6,7 @@ const vm = require('node:vm');
 const {chromium} = require('playwright');
 let browser, page;
 const source = fs.readFileSync(path.join(__dirname, '../automation.js'), 'utf8')
-  .replace("  if (document.readyState === 'loading')", "  globalThis.testPlan = plan; globalThis.testRecordSlider = recordSlider; globalThis.testPlayMedia = playMedia; return;\n  if (document.readyState === 'loading')");
+  .replace("  if (document.readyState === 'loading')", "  globalThis.testPlan = plan; globalThis.testRecordSlider = recordSlider; globalThis.testPlayMedia = playMedia; globalThis.testCustomAnswerAction = customAnswerAction; globalThis.testChosenCustom = chosenCustom; return;\n  if (document.readyState === 'loading')");
 before(async () => {
   browser = await chromium.launch({channel: process.env.TEST_BROWSER === 'chromium' ? undefined : (process.env.TEST_BROWSER || 'chrome'), headless: true});
   page = await browser.newPage();
@@ -99,6 +99,17 @@ test('expands lesson details only while Continue is disabled and ignores navigat
 test('Continue takes priority over unopened lesson blocks and unanswered quiz', async () => {
   await fixture('<details><summary>Материал</summary>Текст</details><label><input type="radio">Ответ</label><button id="next">Продолжить</button>');
   assert.equal((await plan()).id,'next');
+});
+test('combined answer and next button works with custom selected answer widgets', async () => {
+  await fixture('<main><h1>Контрольный вопрос для проверки?</h1><div role="radio" aria-checked="true">Первый вариант</div><button id="answerNext">Ответить и перейти далее</button></main>');
+  assert.equal((await plan()).id,'answerNext');
+});
+test('selects exact XML answer before combined submit button on custom controls', async () => {
+  await fixture('<main><h1>Контрольный вопрос для проверки?</h1><div class="answer">Первый вариант</div><div class="answer">Другой вариант</div><button id="answerNext">Ответить и перейти далее</button></main>');
+  await page.evaluate(() => globalThis.alfaHelper.getItems = () => [{id:'1',question:'Контрольный вопрос для проверки?',answers:['Первый вариант']}]);
+  assert.equal((await plan()).label,'Выбрать правильный вариант');
+  await page.evaluate(() => {const action=testPlan(); action.el.click(); testChosenCustom.add(action.customKey);});
+  assert.equal((await plan()).id,'answerNext');
 });
 test('Continue takes priority over carousel', async () => {
   await carousel();
