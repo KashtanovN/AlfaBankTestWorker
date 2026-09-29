@@ -6,7 +6,7 @@ const vm = require('node:vm');
 const {chromium} = require('playwright');
 let browser, page;
 const source = fs.readFileSync(path.join(__dirname, '../automation.js'), 'utf8')
-  .replace("  if (document.readyState === 'loading')", "  globalThis.testPlan = plan; return;\n  if (document.readyState === 'loading')");
+  .replace("  if (document.readyState === 'loading')", "  globalThis.testPlan = plan; globalThis.testRecordSlider = recordSlider; return;\n  if (document.readyState === 'loading')");
 before(async () => {
   browser = await chromium.launch({channel: process.env.TEST_BROWSER === 'chromium' ? undefined : (process.env.TEST_BROWSER || 'chrome'), headless: true});
   page = await browser.newPage();
@@ -21,6 +21,53 @@ async function fixture(html, answers = ['Первый вариант']) {
   await page.addScriptTag({content: source});
 }
 async function plan() { return page.evaluate(() => { const p = testPlan(); return {label:p.label, blocked:p.blocked, id:p.el?.id}; }); }
+async function carousel(count = 3, loop = false) {
+  await fixture('<button id="left" aria-label="Previous slide">◀</button><button id="right" aria-label="Next slide">▶</button><button id="continue" disabled>Продолжить</button>');
+  await page.evaluate(({count,loop}) => {
+    const right = document.querySelector('#right');
+    let index = 0;
+    const update = () => right.setAttribute('data-qa-data', `"el":"sliderElNav"|"name":"right"|"activeIndex":${index}|"disabled":false`);
+    update();
+    right.onclick = () => {
+      index = loop ? (index + 1) % count : index + 1;
+      update();
+      if (index === count - 1) {
+        document.querySelector('#continue').disabled = false;
+        if (!loop) right.setAttribute('aria-disabled', 'true');
+      }
+    };
+  }, {count,loop});
+}
+async function slideClick() { return page.evaluate(() => { const action = testPlan(); testRecordSlider(action); action.el.click(); return action.step; }); }
+test('carousel traverses image-only slides and then continues', async () => {
+  await carousel();
+  assert.equal((await plan()).id, 'right');
+  assert.equal(await slideClick(), 'slide-0');
+  assert.equal(await slideClick(), 'slide-1');
+  assert.equal((await plan()).id, 'continue');
+});
+test('looping carousel stops at previously visited slide', async () => {
+  await carousel(3, true);
+  for (let i = 0; i < 3; i++) assert.equal(await slideClick(), `slide-${i}`);
+  assert.equal((await plan()).id, 'continue');
+});
+test('non-responsive carousel is not clicked repeatedly', async () => {
+  await carousel();
+  await page.evaluate(() => document.querySelector('#right').onclick = null);
+  await slideClick();
+  assert.equal((await plan()).id, undefined);
+  assert.match((await plan()).blocked, /Ожидаю смену/);
+});
+test('two carousels on one page have separate progress', async () => {
+  await carousel(2);
+  await page.evaluate(() => {
+    const second = document.querySelector('#right').cloneNode(true);
+    second.id = 'second';
+    document.body.insertBefore(second, document.querySelector('#continue'));
+  });
+  await slideClick();
+  assert.equal((await plan()).id, 'second');
+});
 test('selects the exact radio answer, then submits', async () => {
   await fixture('<h1>Контрольный вопрос для проверки?</h1><label><input id="a" type="radio" name="x">Первый вариант</label><label><input type="radio" name="x">Второй вариант</label><button id="submit">Ответить</button>');
   assert.equal((await plan()).label, 'Выбрать правильный вариант');

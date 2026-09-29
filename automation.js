@@ -9,6 +9,34 @@
   let busy = false, ui, status, startButton, lastPage = '', waitingSince = Date.now();
   const visited = new WeakSet();
   const mediaProgress = new WeakMap();
+  const sliders = new WeakMap();
+  function sliderAction() {
+    const arrows = [...document.querySelectorAll('button[aria-label="Next slide"]')]
+      .filter(el => visible(el) && enabled(el) && !el.closest('nav,header,aside,[role="navigation"]'));
+    for (const el of arrows) {
+      const data = el.getAttribute('data-qa-data') || '';
+      if (!data.includes('sliderElNav')) continue;
+      if (/["']?disabled["']?\s*:\s*true/.test(data)) continue;
+      const match = data.match(/["']?activeIndex["']?\s*:\s*(\d+)/);
+      if (!match) return {blocked: 'Карусель найдена, но номер слайда не распознан.'};
+      const index = Number(match[1]);
+      const state = sliders.get(el);
+      if (state?.done) continue;
+      if (state?.seen.has(index)) {
+        if (state.last !== index) { state.done = true; continue; }
+        return {blocked: 'Ожидаю смену слайда карусели. Если он не сменится, выполнение остановится.'};
+      }
+      return {el, label: 'Следующий слайд карусели', sliderIndex: index, step: `slide-${index}`};
+    }
+    return null;
+  }
+  function recordSlider(action) {
+    if (action.sliderIndex === undefined) return;
+    const state = sliders.get(action.el) || {seen: new Set(), last: null, done: false};
+    state.seen.add(action.sliderIndex);
+    state.last = action.sliderIndex;
+    sliders.set(action.el, state);
+  }
   function hash(text) { let h = 2166136261; for (const c of text) h = Math.imul(h ^ c.charCodeAt(0), 16777619); return (h >>> 0).toString(16); }
   function label(el) { return norm(el.innerText || el.value || el.getAttribute('aria-label') || el.title).replace(/[\s→➜➔›»]+$/u, ''); }
   function option(el) {
@@ -58,6 +86,8 @@
       const video = videos[0];
       return video.paused ? {el: video, label: 'Воспроизвести видео', media: true} : {waiting: video};
     }
+    const slider = sliderAction();
+    if (slider) return slider;
     if (next.length === 1) return {el: next[0], label: 'Перейти дальше'};
     if (next.length > 1) return {blocked: 'На странице несколько кнопок перехода.'};
     const launch = named(['начать тест']);
@@ -87,14 +117,14 @@
       }
       const element = action.el;
       const all = [...document.querySelectorAll('*')];
-      const signature = hash(page + '|' + action.label + '|' + all.indexOf(element) + '|' + [...document.querySelectorAll(controlsSelector)].map(checked).join(','));
+      const signature = hash(page + '|' + action.label + '|' + (action.step || '') + '|' + all.indexOf(element) + '|' + [...document.querySelectorAll(controlsSelector)].map(checked).join(','));
       const claim = await send({type: 'claim', key: signature, label: action.label});
       if (claim.granted && element.isConnected && enabled(element)) {
         element.scrollIntoView({block: 'center', behavior: 'instant'});
         if (action.media) {
           try { await element.play(); }
           catch { await send({type: 'stop', reason: 'Браузер не разрешил запуск видео. Нажмите Play вручную и снова запустите расширение.'}); }
-        } else element.click();
+        } else { recordSlider(action); element.click(); }
         if (action.visit) visited.add(element);
         waitingSince = Date.now();
       }
@@ -106,7 +136,7 @@
       const host = document.createElement('div');
       host.style.cssText = 'position:fixed;bottom:12px;right:12px;z-index:2147483647';
       ui = host.attachShadow({mode: 'closed'});
-      ui.innerHTML = `<style>:host{all:initial}section{width:300px;background:#fff;color:#222;padding:12px;border:1px solid #ccc;border-radius:12px;box-shadow:0 4px 24px #0003;font:14px/1.4 Arial}button{padding:8px 18px;cursor:pointer}p{font-size:12px}</style><section><b>Только выбранный курс · 1.3.0</b><p>Откройте курс кнопкой «Начать», затем нажмите «Запустить» здесь. Ответы из XML отправляются автоматически.</p><button>Запустить</button><p id="status">Выключено</p></section>`;
+      ui.innerHTML = `<style>:host{all:initial}section{width:300px;background:#fff;color:#222;padding:12px;border:1px solid #ccc;border-radius:12px;box-shadow:0 4px 24px #0003;font:14px/1.4 Arial}button{padding:8px 18px;cursor:pointer}p{font-size:12px}</style><section><b>Только выбранный курс · 1.3.1</b><p>Откройте курс кнопкой «Начать», затем нажмите «Запустить» здесь. Ответы из XML отправляются автоматически.</p><button>Запустить</button><p id="status">Выключено</p></section>`;
       document.documentElement.append(host);
       status = ui.querySelector('#status'); startButton = ui.querySelector('button');
       startButton.addEventListener('click', async () => { const s = await send({type: 'toggle', enabled: startButton.dataset.running !== 'true'}); startButton.dataset.running = String(s.enabled); startButton.textContent = s.enabled ? 'Стоп' : 'Запустить'; status.textContent = s.status; });
